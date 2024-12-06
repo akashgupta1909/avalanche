@@ -46,37 +46,60 @@ class Accuracy(Metric[float]):
         """The mean utility that will be used to store the running accuracy."""
 
     @torch.no_grad()
+    # def update(
+    #     self,
+    #     predicted_y: Tensor,
+    #     true_y: Tensor,
+    # ) -> None:
+    #     """Update the running accuracy given the true and predicted labels.
+    #     :param predicted_y: The model prediction. Both labels and logit vectors
+    #         are supported.
+    #     :param true_y: The ground truth. Both labels and one-hot vectors
+    #         are supported.
+    #     :return: None.
+    #     """
+    #     true_y = torch.as_tensor(true_y)
+    #     predicted_y = torch.as_tensor(predicted_y)
+    #     if len(true_y) != len(predicted_y):
+    #         raise ValueError("Size mismatch for true_y and predicted_y tensors")
+    #     # Check if logits or labels
+    #     if len(predicted_y.shape) > 1:
+    #         # Logits -> transform to labels
+    #         predicted_y = torch.max(predicted_y, 1)[1]
+    #     if len(true_y.shape) > 1:
+    #         # Logits -> transform to labels
+    #         true_y = torch.max(true_y, 1)[1]
+    #     print("predicted_y", predicted_y)
+    #     print("true_y", true_y)
+    #     true_positives = float(torch.sum(torch.eq(predicted_y, true_y)))
+    #     total_patterns = len(true_y)
+    #     print(true_positives, "true_positives")
+    #     print(total_patterns, "total_patterns")
+    #     self._mean_accuracy.update(true_positives / total_patterns, total_patterns)
     def update(
         self,
         predicted_y: Tensor,
         true_y: Tensor,
     ) -> None:
-        """Update the running accuracy given the true and predicted labels.
-
-        :param predicted_y: The model prediction. Both labels and logit vectors
-            are supported.
-        :param true_y: The ground truth. Both labels and one-hot vectors
-            are supported.
-
-        :return: None.
-        """
         true_y = torch.as_tensor(true_y)
         predicted_y = torch.as_tensor(predicted_y)
 
         if len(true_y) != len(predicted_y):
             raise ValueError("Size mismatch for true_y and predicted_y tensors")
 
-        # Check if logits or labels
-        if len(predicted_y.shape) > 1:
-            # Logits -> transform to labels
-            predicted_y = torch.max(predicted_y, 1)[1]
+        # Convert logits or probabilities to labels for predictions
+        if len(predicted_y.shape) > 1:  # Probabilities or logits
+            # Threshold at 0.5 for binary classification
+            predicted_y = (predicted_y >= 0.5).long().squeeze(-1)
 
-        if len(true_y.shape) > 1:
-            # Logits -> transform to labels
-            true_y = torch.max(true_y, 1)[1]
+        # Convert logits or probabilities to labels for ground truth
+        if len(true_y.shape) > 1:  # Probabilities or one-hot
+            true_y = (true_y >= 0.5).long().squeeze(-1)  # Same threshold at 0.5
 
         true_positives = float(torch.sum(torch.eq(predicted_y, true_y)))
         total_patterns = len(true_y)
+
+        # Update mean accuracy
         self._mean_accuracy.update(true_positives / total_patterns, total_patterns)
 
     def result(self) -> float:
@@ -139,6 +162,9 @@ class TaskAwareAccuracy(Metric[Dict[int, float]]):
 
         :return: None.
         """
+
+        predicted_y = torch.sigmoid(predicted_y)
+
         if len(true_y) != len(predicted_y):
             raise ValueError("Size mismatch for true_y and predicted_y tensors")
 
@@ -218,7 +244,9 @@ class AccuracyPluginMetric(GenericPluginMetric[float, Accuracy]):
         return self._metric.result()
 
     def update(self, strategy):
-        self._metric.update(strategy.mb_output, strategy.mb_y)
+        probs = torch.sigmoid(strategy.mb_output)
+
+        self._metric.update(probs, strategy.mb_y)
 
 
 class AccuracyPerTaskPluginMetric(

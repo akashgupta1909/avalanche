@@ -320,6 +320,15 @@ class StreamConfusionMatrix(PluginMetric[Tensor]):
         return exp_cm
 
     def update(self, true_y: Tensor, predicted_y: Tensor) -> None:
+        predicted_y = torch.sigmoid(predicted_y)
+        if len(predicted_y.shape) > 1:  # Probabilities or logits
+            # Threshold at 0.5 for binary classification
+            predicted_y = (predicted_y >= 0.5).long().squeeze(-1)
+
+        # Convert logits or probabilities to labels for ground truth
+        if len(true_y.shape) > 1:  # Probabilities or one-hot
+            true_y = (true_y >= 0.5).long().squeeze(-1)  # Same threshold at 0.5
+
         self._matrix.update(true_y, predicted_y)
 
     def before_eval(self, strategy) -> None:
